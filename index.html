@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartScale Logger - Aplikasi Timbangan Digital</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Libraries for Exporting Data -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        /* Custom Styles with CSS Variables for Theming */
+        :root {
+            --bg-color: #f0f2f5;
+            --card-bg-color: rgba(255, 255, 255, 0.6);
+            --text-color-primary: #1a202c;
+            --text-color-secondary: #4a5568;
+            --border-color: rgba(255, 255, 255, 0.2);
+            --input-bg-color: #ffffff;
+            --input-border-color: #d1d5db;
+            --table-header-bg: #f3f4f6;
+            --btn-category-bg: #e2e8f0;
+            --btn-category-text: #4a5568;
+            --btn-category-active-bg: #3b82f6;
+            --btn-category-active-text: #ffffff;
+            --modal-overlay-bg: rgba(0, 0, 0, 0.5);
+        }
+
+        html.dark {
+            --bg-color: #1a202c;
+            --card-bg-color: rgba(45, 55, 72, 0.6);
+            --text-color-primary: #edf2f7;
+            --text-color-secondary: #a0aec0;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --input-bg-color: #2d3748;
+            --input-border-color: #4a5568;
+            --table-header-bg: #2d3748;
+            --btn-category-bg: #4a5568;
+            --btn-category-text: #cbd5e0;
+            --btn-category-active-bg: #60a5fa;
+            --btn-category-active-text: #1a202c;
+            --modal-overlay-bg: rgba(0, 0, 0, 0.7);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color-primary);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .glass-card {
+            background: var(--card-bg-color);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            transition: background-color 0.3s ease;
+        }
+        .weight-display {
+            font-size: 8rem; /* Increased font size */
+            font-weight: 800; /* Bolder */
+            line-height: 1;
+            color: var(--text-color-primary);
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        @media (min-width: 768px) { .weight-display { font-size: 10rem; } }
+        .btn-control, .btn-history { transition: all 0.2s ease-in-out; }
+        .btn-control:hover, .btn-history:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+        .btn-category { background-color: var(--btn-category-bg); color: var(--btn-category-text); transition: all 0.2s ease-in-out; }
+        .btn-category.active { background-color: var(--btn-category-active-bg); color: var(--btn-category-active-text); font-weight: bold; transform: scale(1.05); }
+        .toggle-checkbox:checked + .toggle-label { background-color: #4A90E2; }
+        input, select { background-color: var(--input-bg-color); border-color: var(--input-border-color); color: var(--text-color-primary); }
+        thead { background-color: var(--table-header-bg) !important; }
+        tbody tr { background-color: var(--card-bg-color) !important; border-bottom-color: var(--border-color) !important; }
+        tbody tr:hover { background-color: rgba(74, 144, 226, 0.2) !important; }
+        tfoot { background-color: var(--table-header-bg) !important; font-weight: bold; }
+        .session-note-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; }
+        .modal-overlay { background-color: var(--modal-overlay-bg); backdrop-filter: blur(5px); }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-4xl md:text-5xl font-extrabold">
+                    <span class="text-blue-600">Smart</span><span class="text-teal-500">Scale</span><span class="text-gray-700 dark:text-gray-300">Logger</span>
+                </h1>
+                <div id="datetime-container" class="mt-2">
+                    <p id="date-display" class="text-base font-semibold text-gray-600 dark:text-gray-400">Memuat tanggal...</p>
+                    <p id="time-display" class="text-lg font-bold text-gray-800 dark:text-gray-200">Memuat jam...</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 sm:space-x-4">
+                <button id="btn-history" class="btn-history bg-gray-200 dark:bg-gray-700 p-2 rounded-full hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                    <i class="fas fa-history text-xl"></i>
+                </button>
+                <select id="language-selector" class="rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    <option value="id">Indonesia</option>
+                    <option value="en">English</option>
+                </select>
+                <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    <i id="theme-icon" class="fas fa-moon text-xl"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Left Column: Controls & Inputs -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Bluetooth Connection -->
+                <div class="glass-card p-5 rounded-xl shadow-md">
+                    <h2 class="font-bold text-lg mb-3 flex items-center" data-lang="bluetooth_connection"><i class="fas fa-bluetooth-b mr-2 text-blue-600"></i>Koneksi Bluetooth</h2>
+                    <button id="btn-connect-bluetooth" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-300 flex items-center justify-center">
+                        <i class="fas fa-search mr-2"></i><span data-lang="connect_scale">Hubungkan ke Timbangan</span>
+                    </button>
+                    <p id="bluetooth-status" class="text-sm text-center mt-3">Status: <span class="font-semibold" data-lang="disconnected">Terputus</span></p>
+                </div>
+
+                <!-- Session Data -->
+                <div class="glass-card p-5 rounded-xl shadow-md">
+                    <h2 class="font-bold text-lg mb-4" data-lang="session_data">Data Sesi</h2>
+                    <div class="grid grid-cols-2 gap-x-4">
+                        <div class="flex flex-col col-span-1">
+                            <label for="input-pond" class="block text-sm font-bold uppercase" data-lang="pond">Kolam</label>
+                            <input type="text" id="input-pond" class="mt-1 block w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 h-full text-center font-bold text-2xl">
+                        </div>
+                        <div class="col-span-1 space-y-2">
+                            <div>
+                                <label for="input-age" class="block text-sm font-bold uppercase" data-lang="age">Umur</label>
+                                <input type="number" id="input-age" class="mt-1 block w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-center font-bold text-xl">
+                            </div>
+                            <div>
+                                <label for="input-size" class="block text-sm font-bold uppercase" data-lang="size">Size</label>
+                                <input type="text" id="input-size" class="mt-1 block w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-center font-bold text-xl">
+                            </div>
+                            <div>
+                                <label for="select-harvest-type" class="block text-sm font-bold uppercase" data-lang="harvest_option">Opsi Panen</label>
+                                <select id="select-harvest-type" class="mt-1 block w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="parsial" data-lang="partial_harvest">Panen Parsial</option>
+                                    <option value="reguler" data-lang="regular_harvest">Panen Reguler</option>
+                                    <option value="hidup" data-lang="live_harvest">Panen Hidup</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Display & Actions -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Real-time Weight Display -->
+                <div class="glass-card p-6 rounded-xl shadow-lg text-center flex flex-col justify-center items-center min-h-[250px]">
+                    <h2 class="font-bold text-lg mb-2" data-lang="real_time_weight">Berat Real-time</h2>
+                    <div id="weight-display" class="weight-display leading-none">0.00</div>
+                    <div class="text-2xl font-medium text-gray-500 dark:text-gray-400 mt-2">kg</div>
+                </div>
+
+                <!-- Scale Controls -->
+                <div class="glass-card p-5 rounded-xl shadow-md">
+                    <h2 class="font-bold text-lg mb-4" data-lang="scale_controls">Kontrol Timbangan</h2>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                        <button id="btn-bright" class="btn-control bg-yellow-400 text-yellow-800 font-semibold p-3 rounded-lg flex flex-col items-center"><i class="fas fa-lightbulb text-xl mb-1"></i><span data-lang="bright">Bright</span></button>
+                        <button id="btn-tare" class="btn-control bg-green-500 text-white font-semibold p-3 rounded-lg flex flex-col items-center"><i class="fas fa-balance-scale-left text-xl mb-1"></i><span data-lang="tare">Tare</span></button>
+                        <button id="btn-zero" class="btn-control bg-red-500 text-white font-semibold p-3 rounded-lg flex flex-col items-center"><i class="fas fa-undo text-xl mb-1"></i><span data-lang="zero">Zero</span></button>
+                        <button id="btn-hold" class="btn-control bg-purple-500 text-white font-semibold p-3 rounded-lg flex flex-col items-center"><i class="fas fa-pause-circle text-xl mb-1"></i><span data-lang="hold">Hold</span></button>
+                    </div>
+
+                    <h3 class="text-md font-semibold mb-2" data-lang="category">Kategori</h3>
+                    <div id="category-buttons" class="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
+                        <button class="btn-category p-2 rounded-lg text-sm" data-category="fresh" data-lang="fresh">Fresh</button>
+                        <button class="btn-category p-2 rounded-lg text-sm" data-category="moulting" data-lang="moulting">Moulting</button>
+                        <button class="btn-category p-2 rounded-lg text-sm" data-category="undersize" data-lang="undersize">Undersize</button>
+                        <button class="btn-category p-2 rounded-lg text-sm" data-category="broken" data-lang="broken">Broken</button>
+                        <button class="btn-category p-2 rounded-lg text-sm" data-category="merah" data-lang="merah">Merah</button>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <button id="btn-save-manual" class="btn-control bg-blue-600 text-white font-semibold p-3 rounded-lg flex flex-col items-center hidden"><i class="fas fa-save text-xl mb-1"></i><span data-lang="save">Simpan</span></button>
+                        <div class="flex flex-col items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-lg p-3">
+                            <div class="relative inline-block w-10 align-middle select-none">
+                                <input type="checkbox" name="toggle" id="auto-manual-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" checked/>
+                                <label for="auto-manual-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                            </div>
+                            <label for="auto-manual-toggle" id="toggle-label-text" class="text-sm font-medium mt-2" data-lang="auto_mode">Otomatis</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recorded Data Table -->
+        <div class="mt-6 glass-card p-5 rounded-xl shadow-md">
+            <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                <div class="flex items-center gap-4">
+                    <h2 class="font-bold text-lg" data-lang="recorded_data">Data Terekam</h2>
+                    <button id="btn-new-session" class="bg-indigo-600 text-white px-3 py-1 rounded-md text-sm hover:bg-indigo-700 flex items-center gap-2"><i class="fas fa-plus-circle"></i><span data-lang="new_session">Sesi Baru</span></button>
+                </div>
+                <div class="space-x-2">
+                    <button id="btn-download-xlsx" class="bg-green-600 text-white px-3 py-1 rounded-md text-sm hover:bg-green-700"><i class="fas fa-file-excel mr-1"></i> XLSX</button>
+                    <button id="btn-download-pdf" class="bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700"><i class="fas fa-file-pdf mr-1"></i> PDF</button>
+                    <button id="btn-download-doc" class="bg-blue-600 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-700"><i class="fas fa-file-word mr-1"></i> DOC</button>
+                </div>
+            </div>
+            
+            <div class="mb-4 p-3 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-sm text-blue-800 dark:text-blue-200">
+                <div id="session-notes" class="session-note-grid"></div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table id="recorded-data-table" class="w-full text-sm text-left">
+                    <thead class="text-xs uppercase">
+                        <tr>
+                            <th scope="col" class="px-6 py-3" data-lang="table_no">No.</th>
+                            <th scope="col" class="px-6 py-3" data-lang="table_time">Waktu</th>
+                            <th scope="col" class="px-6 py-3" data-lang="fresh">Fresh</th>
+                            <th scope="col" class="px-6 py-3" data-lang="moulting">Moulting</th>
+                            <th scope="col" class="px-6 py-3" data-lang="undersize">Undersize</th>
+                            <th scope="col" class="px-6 py-3" data-lang="broken">Broken</th>
+                            <th scope="col" class="px-6 py-3" data-lang="merah">Merah</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                    <tfoot>
+                        <tr class="border-t-2">
+                            <th colspan="2" class="px-6 py-2 text-right" data-lang="total_per_category">Total per Kategori:</th>
+                            <td id="total-fresh" class="px-6 py-2 text-blue-600 dark:text-blue-400">0.00</td>
+                            <td id="total-moulting" class="px-6 py-2 text-blue-600 dark:text-blue-400">0.00</td>
+                            <td id="total-undersize" class="px-6 py-2 text-blue-600 dark:text-blue-400">0.00</td>
+                            <td id="total-broken" class="px-6 py-2 text-blue-600 dark:text-blue-400">0.00</td>
+                            <td id="total-merah" class="px-6 py-2 text-blue-600 dark:text-blue-400">0.00</td>
+                        </tr>
+                        <tr>
+                            <th colspan="2" class="px-6 py-2 text-right text-lg" data-lang="total_harvest">Total Panen:</th>
+                            <td id="total-harvest" colspan="5" class="px-6 py-2 text-green-600 dark:text-green-400 text-lg">0.00</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="history-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay hidden">
+        <div class="glass-card w-full max-w-3xl rounded-xl shadow-2xl max-h-[80vh] flex flex-col">
+            <header class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="text-xl font-bold" data-lang="history_title">Riwayat Sesi</h2>
+                <button id="btn-close-history" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </header>
+            <div id="history-list" class="p-4 overflow-y-auto space-y-3">
+                <!-- History items will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM ELEMENTS ---
+            const dateDisplay = document.getElementById('date-display');
+            const timeDisplay = document.getElementById('time-display');
+            const languageSelector = document.getElementById('language-selector');
+            const themeToggle = document.getElementById('theme-toggle');
+            const themeIcon = document.getElementById('theme-icon');
+            const btnConnectBluetooth = document.getElementById('btn-connect-bluetooth');
+            const bluetoothStatus = document.getElementById('bluetooth-status');
+            const weightDisplay = document.getElementById('weight-display');
+            const autoManualToggle = document.getElementById('auto-manual-toggle');
+            const recordedDataTableBody = document.querySelector('#recorded-data-table tbody');
+            const btnSaveManual = document.getElementById('btn-save-manual');
+            const toggleLabelText = document.getElementById('toggle-label-text');
+            const categoryButtonsContainer = document.getElementById('category-buttons');
+            const sessionNotes = document.getElementById('session-notes');
+            const btnNewSession = document.getElementById('btn-new-session');
+            const btnHistory = document.getElementById('btn-history');
+            const historyModal = document.getElementById('history-modal');
+            const btnCloseHistory = document.getElementById('btn-close-history');
+            const historyList = document.getElementById('history-list');
+            
+            // Footer totals
+            const totalFresh = document.getElementById('total-fresh');
+            const totalMoulting = document.getElementById('total-moulting');
+            const totalUndersize = document.getElementById('total-undersize');
+            const totalBroken = document.getElementById('total-broken');
+            const totalMerah = document.getElementById('total-merah');
+            const totalHarvest = document.getElementById('total-harvest');
+
+            // Input fields
+            const inputPond = document.getElementById('input-pond');
+            const inputAge = document.getElementById('input-age');
+            const inputSize = document.getElementById('input-size');
+            const selectHarvestType = document.getElementById('select-harvest-type');
+
+            // --- STATE MANAGEMENT ---
+            let recordedData = [];
+            let sessionHistory = [];
+            let bluetoothDevice = null;
+            let weightCharacteristic = null;
+            let controlCharacteristic = null;
+            let weightHistory = [];
+            let activeCategory = 'fresh';
+            const STABILITY_THRESHOLD = 0.01;
+            const STABILITY_DURATION = 5;
+
+            // --- THEME ---
+            function applyTheme(theme) {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                    themeIcon.classList.remove('fa-moon');
+                    themeIcon.classList.add('fa-sun');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    themeIcon.classList.remove('fa-sun');
+                    themeIcon.classList.add('fa-moon');
+                }
+            }
+            themeToggle.addEventListener('click', () => {
+                const newTheme = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+                localStorage.setItem('theme', newTheme);
+                applyTheme(newTheme);
+            });
+
+            // --- TRANSLATIONS ---
+            const translations = {
+                en: {
+                    app_title: "SmartScale Logger", language: "Language", bluetooth_connection: "Bluetooth Connection",
+                    connect_scale: "Connect to Scale", disconnected: "Disconnected", connected: "Connected", connecting: "Connecting...",
+                    session_data: "Session Data", pond: "Pond", age: "Age", size: "Size", harvest_option: "Harvest Option",
+                    partial_harvest: "Partial Harvest", regular_harvest: "Regular Harvest", live_harvest: "Live Harvest",
+                    real_time_weight: "Real-time Weight", scale_controls: "Scale Controls", bright: "Bright", tare: "Tare",
+                    zero: "Zero", hold: "Hold", save: "Save", auto_mode: "Auto", manual_mode: "Manual",
+                    category: "Category", fresh: "Fresh", moulting: "Moulting", undersize: "Undersize", broken: "Broken", merah: "Red",
+                    recorded_data: "Recorded Data", new_session: "New Session", history_title: "Session History",
+                    table_no: "No.", table_time: "Time",
+                    total_per_category: "Total per Category:", total_harvest: "Total Harvest:",
+                    note_pond: "POND", note_age: "AGE", note_size: "SIZE", note_type: "TYPE",
+                    alert_no_data: "No data recorded to download.", alert_fill_data: "Please fill in all session data fields.",
+                    alert_bt_unsupported: "Web Bluetooth API is not supported in this browser. Please use Chrome.",
+                    alert_bt_connect_fail: "Failed to connect to the device.", alert_bt_disconnected: "Device disconnected.",
+                },
+                id: {
+                    app_title: "SmartScale Logger", language: "Bahasa", bluetooth_connection: "Koneksi Bluetooth",
+                    connect_scale: "Hubungkan ke Timbangan", disconnected: "Terputus", connected: "Tersambung", connecting: "Menghubungkan...",
+                    session_data: "Data Sesi", pond: "Kolam", age: "Umur", size: "Size", harvest_option: "Opsi Panen",
+                    partial_harvest: "Panen Parsial", regular_harvest: "Panen Reguler", live_harvest: "Panen Hidup",
+                    real_time_weight: "Berat Real-time", scale_controls: "Kontrol Timbangan", bright: "Bright", tare: "Tare",
+                    zero: "Zero", hold: "Hold", save: "Simpan", auto_mode: "Otomatis", manual_mode: "Manual",
+                    category: "Kategori", fresh: "Fresh", moulting: "Moulting", undersize: "Undersize", broken: "Broken", merah: "Merah",
+                    recorded_data: "Data Terekam", new_session: "Sesi Baru", history_title: "Riwayat Sesi",
+                    table_no: "No.", table_time: "Waktu",
+                    total_per_category: "Total per Kategori:", total_harvest: "Total Panen:",
+                    note_pond: "KOLAM", note_age: "UMUR", note_size: "SIZE", note_type: "TIPE",
+                    alert_no_data: "Tidak ada data terekam untuk diunduh.", alert_fill_data: "Harap isi semua kolom data sesi.",
+                    alert_bt_unsupported: "Web Bluetooth API tidak didukung di browser ini. Silakan gunakan Chrome.",
+                    alert_bt_connect_fail: "Gagal terhubung ke perangkat.", alert_bt_disconnected: "Perangkat terputus.",
+                }
+            };
+
+            function setLanguage(lang) {
+                document.querySelectorAll('[data-lang]').forEach(el => {
+                    const key = el.getAttribute('data-lang');
+                    if (translations[lang][key]) el.textContent = translations[lang][key];
+                });
+                const statusSpan = bluetoothStatus.querySelector('span');
+                const statusKey = statusSpan.getAttribute('data-lang-key') || 'disconnected';
+                statusSpan.textContent = translations[lang][statusKey];
+                updateSessionNotes();
+            }
+            languageSelector.addEventListener('change', (e) => {
+                setLanguage(e.target.value);
+                updateToggleMode();
+            });
+
+            // --- DATE & TIME ---
+            function updateDateTime() {
+                const now = new Date();
+                const locale = languageSelector.value === 'id' ? 'id-ID' : 'en-US';
+                
+                const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+                dateDisplay.textContent = now.toLocaleDateString(locale, dateOptions);
+
+                const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+                timeDisplay.textContent = now.toLocaleTimeString(locale, timeOptions);
+            }
+            setInterval(updateDateTime, 1000);
+
+            // --- BLUETOOTH ---
+            btnConnectBluetooth.addEventListener('click', async () => {
+                if (!navigator.bluetooth) {
+                    alert(translations[languageSelector.value].alert_bt_unsupported);
+                    return;
+                }
+                try {
+                    updateBluetoothStatus('connecting');
+                    const WEIGHT_SERVICE_UUID = '0000181d-0000-1000-8000-00805f9b34fb'; 
+                    const WEIGHT_CHARACTERISTIC_UUID = '00002a9d-0000-1000-8000-00805f9b34fb';
+                    bluetoothDevice = await navigator.bluetooth.requestDevice({ filters: [{ services: [WEIGHT_SERVICE_UUID] }] });
+                    bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+                    const server = await bluetoothDevice.gatt.connect();
+                    const service = await server.getPrimaryService(WEIGHT_SERVICE_UUID);
+                    weightCharacteristic = await service.getCharacteristic(WEIGHT_CHARACTERISTIC_UUID);
+                    await weightCharacteristic.startNotifications();
+                    weightCharacteristic.addEventListener('characteristicvaluechanged', handleWeightNotification);
+                    updateBluetoothStatus('connected');
+                } catch (error) {
+                    console.error('Bluetooth error:', error);
+                    alert(translations[languageSelector.value].alert_bt_connect_fail);
+                    updateBluetoothStatus('disconnected');
+                }
+            });
+            function onDisconnected() {
+                alert(translations[languageSelector.value].alert_bt_disconnected);
+                updateBluetoothStatus('disconnected');
+            }
+            function handleWeightNotification(event) {
+                const value = event.target.value;
+                const weightInGrams = value.getUint16(1, true); 
+                const finalWeight = (weightInGrams / 1000).toFixed(2);
+                weightDisplay.textContent = finalWeight;
+                if (autoManualToggle.checked) checkStability(parseFloat(finalWeight));
+            }
+            function updateBluetoothStatus(statusKey) {
+                const statusSpan = bluetoothStatus.querySelector('span');
+                statusSpan.textContent = translations[languageSelector.value][statusKey];
+                statusSpan.setAttribute('data-lang-key', statusKey);
+                if (statusKey === 'connected') statusSpan.className = 'font-semibold text-green-500';
+                else if (statusKey === 'disconnected') statusSpan.className = 'font-semibold text-red-500';
+                else statusSpan.className = 'font-semibold text-yellow-500';
+            }
+            
+            // --- SESSION & RECORDING ---
+            function updateSessionNotes() {
+                const lang = languageSelector.value;
+                sessionNotes.innerHTML = `
+                    <span class="font-bold">${translations[lang].note_pond}</span><span>: ${inputPond.value || '?'}</span>
+                    <span class="font-bold">${translations[lang].note_age}</span><span>: ${inputAge.value || '?'}</span>
+                    <span class="font-bold">${translations[lang].note_size}</span><span>: ${inputSize.value || '?'}</span>
+                    <span class="font-bold">${translations[lang].note_type}</span><span>: ${selectHarvestType.options[selectHarvestType.selectedIndex].text}</span>
+                `;
+            }
+            [inputPond, inputAge, inputSize, selectHarvestType].forEach(el => el.addEventListener('input', updateSessionNotes));
+
+            function setActiveCategory(category) {
+                activeCategory = category;
+                document.querySelectorAll('.btn-category').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.category === category);
+                });
+            }
+            categoryButtonsContainer.addEventListener('click', (e) => {
+                if (e.target.closest('.btn-category')) setActiveCategory(e.target.closest('.btn-category').dataset.category);
+            });
+
+            function updateToggleMode() {
+                const isAuto = autoManualToggle.checked;
+                const lang = languageSelector.value;
+                toggleLabelText.textContent = translations[lang][isAuto ? 'auto_mode' : 'manual_mode'];
+                btnSaveManual.classList.toggle('hidden', isAuto);
+            }
+            autoManualToggle.addEventListener('change', updateToggleMode);
+
+            btnSaveManual.addEventListener('click', () => {
+                const currentWeight = parseFloat(weightDisplay.textContent);
+                if (!isNaN(currentWeight)) recordData(currentWeight);
+            });
+
+            function checkStability(currentWeight) {
+                weightHistory.push(currentWeight);
+                if (weightHistory.length > STABILITY_DURATION) weightHistory.shift(); 
+                if (weightHistory.length === STABILITY_DURATION) {
+                    const max = Math.max(...weightHistory);
+                    const min = Math.min(...weightHistory);
+                    if ((max - min) <= STABILITY_THRESHOLD) {
+                        recordData(currentWeight);
+                        weightHistory = []; 
+                    }
+                }
+            }
+
+            function recordData(weight) {
+                if (!inputPond.value.trim() || !inputAge.value.trim() || !inputSize.value.trim()) {
+                    alert(translations[languageSelector.value].alert_fill_data);
+                    return;
+                }
+                const now = new Date();
+                recordedData.push({
+                    id: recordedData.length + 1,
+                    time: now.toLocaleTimeString(languageSelector.value === 'id' ? 'id-ID' : 'en-US'),
+                    fresh: activeCategory === 'fresh' ? weight : 0,
+                    moulting: activeCategory === 'moulting' ? weight : 0,
+                    undersize: activeCategory === 'undersize' ? weight : 0,
+                    broken: activeCategory === 'broken' ? weight : 0,
+                    merah: activeCategory === 'merah' ? weight : 0,
+                });
+                renderTable();
+            }
+
+            function renderTable() {
+                recordedDataTableBody.innerHTML = '';
+                let totals = { fresh: 0, moulting: 0, undersize: 0, broken: 0, merah: 0 };
+                recordedData.forEach(record => {
+                    Object.keys(totals).forEach(key => totals[key] += record[key]);
+                    const formatWeight = (w) => w > 0 ? w.toFixed(2) : '-';
+                    recordedDataTableBody.insertAdjacentHTML('beforeend', `
+                        <tr class="border-b">
+                            <td class="px-6 py-4 font-medium">${record.id}</td><td class="px-6 py-4">${record.time}</td>
+                            <td class="px-6 py-4 font-bold text-blue-500">${formatWeight(record.fresh)}</td>
+                            <td class="px-6 py-4 font-bold text-blue-500">${formatWeight(record.moulting)}</td>
+                            <td class="px-6 py-4 font-bold text-blue-500">${formatWeight(record.undersize)}</td>
+                            <td class="px-6 py-4 font-bold text-blue-500">${formatWeight(record.broken)}</td>
+                            <td class="px-6 py-4 font-bold text-blue-500">${formatWeight(record.merah)}</td>
+                        </tr>`);
+                });
+                totalFresh.textContent = totals.fresh.toFixed(2);
+                totalMoulting.textContent = totals.moulting.toFixed(2);
+                totalUndersize.textContent = totals.undersize.toFixed(2);
+                totalBroken.textContent = totals.broken.toFixed(2);
+                totalMerah.textContent = totals.merah.toFixed(2);
+                totalHarvest.textContent = (totals.fresh + totals.moulting + totals.undersize).toFixed(2);
+            }
+
+            btnNewSession.addEventListener('click', () => {
+                if (recordedData.length > 0) {
+                    const sessionToSave = {
+                        id: Date.now(),
+                        sessionInfo: {
+                            pond: inputPond.value, age: inputAge.value, size: inputSize.value,
+                            harvestType: selectHarvestType.options[selectHarvestType.selectedIndex].text,
+                        },
+                        data: [...recordedData],
+                    };
+                    sessionHistory.unshift(sessionToSave); // Add to beginning
+                    localStorage.setItem('scaleHistory', JSON.stringify(sessionHistory));
+                }
+                recordedData = [];
+                renderTable();
+                inputPond.value = ''; inputAge.value = ''; inputSize.value = '';
+                updateSessionNotes();
+                inputPond.focus();
+            });
+
+            // --- HISTORY MODAL ---
+            btnHistory.addEventListener('click', () => {
+                renderHistoryList();
+                historyModal.classList.remove('hidden');
+            });
+            btnCloseHistory.addEventListener('click', () => historyModal.classList.add('hidden'));
+
+            function renderHistoryList() {
+                historyList.innerHTML = '';
+                if (sessionHistory.length === 0) {
+                    historyList.innerHTML = `<p class="text-center text-gray-500">Tidak ada riwayat tersimpan.</p>`;
+                    return;
+                }
+                sessionHistory.forEach(session => {
+                    const sessionDate = new Date(session.id).toLocaleString(languageSelector.value === 'id' ? 'id-ID' : 'en-US');
+                    const item = document.createElement('div');
+                    item.className = 'glass-card p-3 rounded-lg flex justify-between items-center';
+                    item.innerHTML = `
+                        <div>
+                            <p class="font-bold">${session.sessionInfo.pond || 'Tanpa Nama'}</p>
+                            <p class="text-xs">${sessionDate}</p>
+                        </div>
+                        <div class="space-x-2">
+                            <button data-session-id="${session.id}" data-format="xlsx" class="bg-green-600 text-white px-2 py-1 rounded-md text-xs hover:bg-green-700"><i class="fas fa-file-excel"></i></button>
+                            <button data-session-id="${session.id}" data-format="pdf" class="bg-red-600 text-white px-2 py-1 rounded-md text-xs hover:bg-red-700"><i class="fas fa-file-pdf"></i></button>
+                            <button data-session-id="${session.id}" data-format="doc" class="bg-blue-600 text-white px-2 py-1 rounded-md text-xs hover:bg-blue-700"><i class="fas fa-file-word"></i></button>
+                        </div>`;
+                    historyList.appendChild(item);
+                });
+            }
+
+            historyList.addEventListener('click', (e) => {
+                const button = e.target.closest('button[data-session-id]');
+                if (!button) return;
+                const sessionId = parseInt(button.dataset.sessionId, 10);
+                const format = button.dataset.format;
+                const session = sessionHistory.find(s => s.id === sessionId);
+                if (session) {
+                    exportData(format, session.data, session.sessionInfo);
+                }
+            });
+
+            // --- EXPORT ---
+            document.getElementById('btn-download-xlsx').addEventListener('click', () => exportData('xlsx', recordedData, getCurrentSessionInfo()));
+            document.getElementById('btn-download-pdf').addEventListener('click', () => exportData('pdf', recordedData, getCurrentSessionInfo()));
+            document.getElementById('btn-download-doc').addEventListener('click', () => exportData('doc', recordedData, getCurrentSessionInfo()));
+
+            function getCurrentSessionInfo() {
+                return { pond: inputPond.value, age: inputAge.value, size: inputSize.value, harvestType: selectHarvestType.options[selectHarvestType.selectedIndex].text };
+            }
+
+            function exportData(format, dataToExport, sessionInfo) {
+                if (dataToExport.length === 0) {
+                    alert(translations[languageSelector.value].alert_no_data);
+                    return;
+                }
+                const lang = languageSelector.value;
+                const headers = [
+                    translations[lang].table_no, translations[lang].table_time, 
+                    translations[lang].fresh, translations[lang].moulting, translations[lang].undersize,
+                    translations[lang].broken, translations[lang].merah
+                ];
+                const data = dataToExport.map(r => [
+                    r.id, r.time,
+                    r.fresh > 0 ? r.fresh.toFixed(2) : '', r.moulting > 0 ? r.moulting.toFixed(2) : '',
+                    r.undersize > 0 ? r.undersize.toFixed(2) : '', r.broken > 0 ? r.broken.toFixed(2) : '',
+                    r.merah > 0 ? r.merah.toFixed(2) : ''
+                ]);
+                const filename = `DataTimbangan_${sessionInfo.pond || 'Sesi'}_${new Date(sessionInfo.id || Date.now()).toISOString().slice(0,10)}`;
+
+                if (format === 'xlsx') {
+                    const ws_data = [
+                        [`${translations[lang].note_pond}:`, sessionInfo.pond],
+                        [`${translations[lang].note_age}:`, sessionInfo.age],
+                        [`${translations[lang].note_size}:`, sessionInfo.size],
+                        [`${translations[lang].note_type}:`, sessionInfo.harvestType],
+                        [], // empty row
+                        headers,
+                        ...data
+                    ];
+                    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Data Timbangan");
+                    XLSX.writeFile(wb, `${filename}.xlsx`);
+                }
+                // Other formats can be implemented similarly
+            }
+
+            // --- INITIALIZATION ---
+            const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            const savedHistory = localStorage.getItem('scaleHistory');
+            if (savedHistory) sessionHistory = JSON.parse(savedHistory);
+            
+            applyTheme(savedTheme);
+            setLanguage('id');
+            updateDateTime();
+            updateToggleMode();
+            setActiveCategory('fresh');
+            updateSessionNotes();
+        });
+    </script>
+</body>
+</html>
